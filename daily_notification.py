@@ -3,6 +3,8 @@ from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 import json
 import os
+from plyer import notification
+import time
 
 
 class DeadlineTracker:
@@ -12,6 +14,7 @@ class DeadlineTracker:
         self.root.geometry("750x450")
 
         self.deadlines = []
+        self.last_notification_time = {}  # Для отслеживания времени последних уведомлений
         self.load_data()
 
         self.create_widgets()
@@ -306,6 +309,19 @@ class DeadlineTracker:
 
         return time_str, is_urgent
 
+    def send_urgent_notification(self, deadline_name, days_remaining, days_needed):
+        """Отправка уведомления для срочных дедлайнов"""
+        try:
+            notification.notify(
+                title="⚠️ СРОЧНЫЙ ДЕДЛАЙН!",
+                message=f"'{deadline_name}'\nОсталось {days_remaining} дн. \nНужно {days_needed} дн. на выполнение!",
+                timeout=100,  # показывать 10 секунд
+                toast=True
+            )
+            print(f"Уведомление отправлено для: {deadline_name}")
+        except Exception as e:
+            print(f"Ошибка отправки уведомления: {e}")
+
     def update_display(self):
         # Очищаем treeview
         for item in self.tree.get_children():
@@ -313,6 +329,8 @@ class DeadlineTracker:
 
         # Сортируем по дате дедлайна
         self.deadlines.sort(key=lambda x: x["deadline"])
+
+        current_time = datetime.now()
 
         # Добавляем дедлайны в treeview
         for deadline in self.deadlines:
@@ -334,9 +352,29 @@ class DeadlineTracker:
             # Подсвечиваем красным если срочно или просрочено
             if is_urgent or "ПРОСРОЧЕНО" in remaining:
                 self.tree.item(item, tags=("urgent",))
+
+                # Отправляем уведомление для срочных дедлайнов
+                if is_urgent and deadline["days_needed"] is not None:
+                    days_remaining = (deadline["deadline"] - current_time).days
+
+                    # Проверяем когда было последнее уведомление (не чаще чем раз в час)
+                    last_notified = self.last_notification_time.get(deadline["name"])
+                    if last_notified is None or (current_time - last_notified).total_seconds() >= 3600:  # 1 час
+                        self.send_urgent_notification(
+                            deadline["name"],
+                            days_remaining,
+                            deadline["days_needed"]
+                        )
+                        self.last_notification_time[deadline["name"]] = current_time
             else:
                 # Убираем подсветку если не срочно
                 self.tree.item(item, tags=())
+
+        # Настраиваем тег для красного цвета
+        self.tree.tag_configure("urgent", background="#ffcccc")
+
+        # Обновляем каждую минуту
+        self.root.after(60000, self.update_display)
 
         # Настраиваем тег для красного цвета
         self.tree.tag_configure("urgent", background="#ffcccc")
