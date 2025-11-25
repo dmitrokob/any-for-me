@@ -15,6 +15,9 @@ class ListEditor:
         self.deleted_items = []  # Корзина
         self.current_file = None
 
+        # Переменные для drag&drop
+        self.drag_data = {"item": None, "index": None, "list_name": None, "y_offset": 0}
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -82,6 +85,9 @@ class ListEditor:
         listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         scrollbar.config(command=listbox.yview)
 
+        # Настройка drag&drop
+        self.setup_drag_drop(listbox, list_name)
+
         # Привязываем двойной клик для редактирования
         listbox.bind("<Double-Button-1>", lambda e: self.edit_item(list_name))
 
@@ -120,6 +126,71 @@ class ListEditor:
 
         # Добавляем контекстное меню для переименования вкладки
         self.setup_tab_context_menu()
+
+    def setup_drag_drop(self, listbox, list_name):
+        """Настраивает drag&drop для Listbox"""
+        # Начало перетаскивания
+        listbox.bind("<ButtonPress-1>", lambda e: self.on_drag_start(e, listbox, list_name))
+        # Движение при перетаскивании
+        listbox.bind("<B1-Motion>", lambda e: self.on_drag_motion(e, listbox, list_name))
+        # Конец перетаскивания
+        listbox.bind("<ButtonRelease-1>", lambda e: self.on_drag_release(e, listbox, list_name))
+
+    def on_drag_start(self, event, listbox, list_name):
+        """Начало перетаскивания"""
+        # Получаем индекс элемента под курсором
+        index = listbox.nearest(event.y)
+        if index >= 0 and index < len(self.lists[list_name]):
+            # Сохраняем данные о перетаскиваемом элементе
+            self.drag_data["item"] = self.lists[list_name][index]
+            self.drag_data["index"] = index
+            self.drag_data["list_name"] = list_name
+            self.drag_data["y_offset"] = event.y - listbox.bbox(index)[1]
+
+            # Визуально выделяем перетаскиваемый элемент
+            listbox.selection_clear(0, tk.END)
+            listbox.selection_set(index)
+
+    def on_drag_motion(self, event, listbox, list_name):
+        """Движение при перетаскивании"""
+        if self.drag_data["item"] is not None:
+            # Получаем текущую позицию курсора
+            current_index = listbox.nearest(event.y)
+
+            # Если курсор на другом элементе, показываем визуальную подсказку
+            if (current_index >= 0 and current_index != self.drag_data["index"] and
+                    current_index < len(self.lists[list_name])):
+                listbox.selection_clear(0, tk.END)
+                listbox.selection_set(current_index)
+
+    def on_drag_release(self, event, listbox, list_name):
+        """Завершение перетаскивания"""
+        if (self.drag_data["item"] is not None and
+                self.drag_data["list_name"] == list_name):
+
+            # Получаем конечную позицию
+            end_index = listbox.nearest(event.y)
+
+            # Если позиция изменилась и валидна
+            if (end_index >= 0 and end_index != self.drag_data["index"] and
+                    end_index < len(self.lists[list_name])):
+                # Удаляем элемент из старой позиции
+                item = self.lists[list_name].pop(self.drag_data["index"])
+
+                # Вставляем в новую позицию
+                self.lists[list_name].insert(end_index, item)
+
+                # Обновляем отображение
+                self.refresh_list(list_name)
+
+                # Выделяем перемещенный элемент
+                listbox.selection_set(end_index)
+
+                # Автосохранение
+                self.auto_save()
+
+            # Сбрасываем данные о перетаскивании
+            self.drag_data = {"item": None, "index": None, "list_name": None, "y_offset": 0}
 
     def setup_tab_context_menu(self):
         """Добавляет контекстное меню для переименования вкладок"""
