@@ -681,32 +681,32 @@ class ListEditor:
         )
 
         if filename:
-            # ПРОВЕРЯЕМ, НЕ ОТКРЫТ ЛИ TXT ФАЙЛ УЖЕ (на всякий случай)
-            if filename in self.open_files:
-                messagebox.showinfo("Файл уже открыт", f"Файл '{os.path.basename(filename)}' уже открыт!")
-                return
-
             try:
                 with open(filename, 'r', encoding='utf-8') as f:
                     lines = f.readlines()
 
-                # Очищаем текущий список "1" и добавляем новые элементы
-                self.lists["1"] = []
+                # СОЗДАЕМ НОВЫЕ ЧИСТЫЕ ДАННЫЕ ДЛЯ ИМПОРТА
+                imported_lists = {"1": []}
+                imported_trash = []
+
                 for line in lines:
                     line = line.strip()
                     if line:  # Добавляем только непустые строки
-                        self.lists["1"].append(line)
+                        imported_lists["1"].append(line)
 
-                # Обновляем отображение
-                self.refresh_list("1")
+                # ЗАМЕНЯЕМ ТЕКУЩИЕ ДАННЫЕ НА ИМПОРТИРОВАННЫЕ
+                self.lists = imported_lists
+                self.deleted_items = imported_trash
+                self.current_file = None  # Сбрасываем текущий файл
+
+                # Обновляем интерфейс
+                self.refresh_interface()
 
                 # Предлагаем сохранить как JSON
                 if messagebox.askyesno("Импорт завершен",
                                        f"Импортировано {len(self.lists['1'])} элементов из TXT файла.\n"
                                        "Хотите сохранить как JSON файл?"):
                     self.save_as_file()
-                else:
-                    self.auto_save()
 
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось импортировать файл: {str(e)}")
@@ -750,13 +750,6 @@ class ListEditor:
         )
 
         if filename:
-            # ПРОВЕРЯЕМ, НЕ ОТКРЫТ ЛИ ФАЙЛ УЖЕ
-            if filename in self.open_files:
-                messagebox.showinfo("Файл уже открыт", f"Файл '{os.path.basename(filename)}' уже открыт!")
-                # Переключаемся на уже открытый файл
-                self.switch_to_file(filename)
-                return
-
             self.current_file = filename
             self._save_to_file(filename)
 
