@@ -2,13 +2,20 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, simpledialog
 import json
 import os
-
+import sys
 
 class ListEditor:
     def __init__(self, root):
         self.root = root
         self.root.title("Редактор списков")
         self.root.geometry("800x600")
+
+        if getattr(sys, 'frozen', False):
+            # Если программа запакована (exe)
+            self.base_dir = os.path.dirname(sys.executable)
+        else:
+            # Если запуск из исходного кода
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))
 
         # Данные
         self.lists = {"1": []}  # Словарь списков
@@ -17,7 +24,7 @@ class ListEditor:
 
         # Система открытых файлов
         self.open_files = {}  # {filename: {lists: {}, trash: []}}
-        self.recent_files_file = "recent_files.json"  # Файл для хранения истории
+        self.recent_files_file = os.path.join(self.base_dir, "recent_files.json")  # Файл для хранения истории
         self.file_buttons = {}  # Кнопки файлов
 
         # Переменные для drag&drop
@@ -85,8 +92,9 @@ class ListEditor:
     def load_recent_files(self):
         """Загружает историю открытых файлов"""
         try:
-            if os.path.exists(self.recent_files_file):
-                with open(self.recent_files_file, 'r', encoding='utf-8') as f:
+            file_path = os.path.join(self.base_dir, self.recent_files_file)
+            if os.path.exists(file_path):
+                with open(file_path, 'r', encoding='utf-8') as f:
                     recent_files = json.load(f)
 
                 # Загружаем данные последних файлов
@@ -106,7 +114,8 @@ class ListEditor:
     def save_recent_files(self):
         """Сохраняет историю открытых файлов"""
         try:
-            with open(self.recent_files_file, 'w', encoding='utf-8') as f:
+            file_path = os.path.join(self.base_dir, self.recent_files_file)
+            with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(self.open_files, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"Ошибка сохранения истории файлов: {e}")
