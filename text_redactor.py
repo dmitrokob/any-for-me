@@ -9,41 +9,56 @@ class ListEditor:
         self.root = root
         self.root.title("Редактор списков")
         self.root.geometry("800x600")
+        self.root.option_add('*TNotebook.Tab.height', 10)
 
         # Данные
         self.lists = {"1": []}  # Словарь списков
         self.deleted_items = []  # Корзина
         self.current_file = None
 
+        # Система открытых файлов
+        self.open_files = {}  # {filename: {lists: {}, trash: []}}
+        self.recent_files_file = "recent_files.json"  # Файл для хранения истории
+
         # Переменные для drag&drop
         self.drag_data = {"item": None, "index": None, "list_name": None, "y_offset": 0}
 
         self.setup_ui()
+        self.load_recent_files()
 
     def setup_ui(self):
         # Главный фрейм
-        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame = ttk.Frame(self.root, padding="0")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         # Настройка весов для растягивания
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(0, weight=1)
         main_frame.rowconfigure(1, weight=1)
 
         # Верхняя панель с кнопками
         top_frame = ttk.Frame(main_frame)
-        top_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+        top_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=0)
 
-        ttk.Button(top_frame, text="Открыть JSON", command=self.open_json_file).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(top_frame, text="Импорт TXT", command=self.import_txt_file).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(top_frame, text="Сохранить как", command=self.save_as_file).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(top_frame, text="Корзина", command=self.show_trash).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(top_frame, text="Открыть JSON", command=self.open_json_file).pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Button(top_frame, text="Импорт TXT", command=self.import_txt_file).pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Button(top_frame, text="Сохранить как", command=self.save_as_file).pack(side=tk.LEFT, padx=(0, 3))
+        ttk.Button(top_frame, text="Корзина", command=self.show_trash).pack(side=tk.LEFT, padx=(0, 3))
         ttk.Button(top_frame, text="Добавить список", command=self.add_list).pack(side=tk.LEFT)
+
+        # Панель открытых файлов (как вкладки сверху)
+        self.files_notebook = ttk.Notebook(main_frame)
+        self.files_notebook.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=0)
+        self.files_notebook.bind("<Button-3>", self.show_files_context_menu)
+
+        # ДОБАВЬ ЭТУ СТРОКУ - обработчик переключения вкладок файлов
+        self.files_notebook.bind("<<NotebookTabChanged>>", self.on_file_tab_changed)
 
         # Фрейм для списков
         self.lists_frame = ttk.Frame(main_frame)
-        self.lists_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.lists_frame.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=0)
+
         self.lists_frame.columnconfigure(0, weight=1)
         self.lists_frame.rowconfigure(0, weight=1)
 
@@ -56,7 +71,7 @@ class ListEditor:
 
         # Нижняя панель для добавления элементов
         bottom_frame = ttk.Frame(main_frame)
-        bottom_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        bottom_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
 
         ttk.Label(bottom_frame, text="Новый элемент:").pack(side=tk.LEFT)
         self.new_item_entry = ttk.Entry(bottom_frame, width=30)
@@ -64,6 +79,163 @@ class ListEditor:
         self.new_item_entry.bind("<Return>", lambda e: self.add_item_to_current_list())
 
         ttk.Button(bottom_frame, text="Добавить", command=self.add_item_to_current_list).pack(side=tk.LEFT)
+
+    def on_file_tab_changed(self, event):
+        """Обработчик переключения вкладок файлов"""
+        selected_tab = self.files_notebook.select()
+        if selected_tab:
+            tab_index = self.files_notebook.index(selected_tab)
+            files_list = list(self.open_files.keys())
+            if tab_index < len(files_list):
+                filename = files_list[tab_index]
+                if filename != self.current_file:
+                    self.switch_to_file(filename)
+
+    def load_recent_files(self):
+        """Загружает историю открытых файлов"""
+        try:
+            if os.path.exists(self.recent_files_file):
+                with open(self.recent_files_file, 'r', encoding='utf-8') as f:
+                    recent_files = json.load(f)
+
+                # Загружаем данные последних файлов
+                for filename, file_data in recent_files.items():
+                    if os.path.exists(filename):
+                        self.open_files[filename] = file_data
+                        self.add_file_tab(filename)
+
+                # Если есть открытые файлы, загружаем первый
+                if self.open_files:
+                    first_file = list(self.open_files.keys())[0]
+                    self.switch_to_file(first_file)
+
+        except Exception as e:
+            print(f"Ошибка загрузки истории файлов: {e}")
+
+    def save_recent_files(self):
+        """Сохраняет историю открытых файлов"""
+        try:
+            with open(self.recent_files_file, 'w', encoding='utf-8') as f:
+                json.dump(self.open_files, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Ошибка сохранения истории файлов: {e}")
+
+    def add_file_tab(self, filename):
+        """Добавляет вкладку файла"""
+        # Создаем фрейм для файла
+        file_frame = ttk.Frame(self.files_notebook, padding="2")
+
+        # Добавляем вкладку с именем файла
+        display_name = os.path.basename(filename)
+        self.files_notebook.add(file_frame, text=display_name)
+
+    def switch_to_file(self, filename):
+        """Переключается на указанный файл"""
+        if filename in self.open_files:
+            # Сохраняем текущие данные если есть открытый файл
+            if self.current_file and self.current_file in self.open_files:
+                self.open_files[self.current_file] = {
+                    'lists': self.lists.copy(),
+                    'trash': self.deleted_items.copy()
+                }
+
+            # Загружаем данные нового файла
+            file_data = self.open_files[filename]
+            self.lists = file_data.get('lists', {"1": []}).copy()
+            self.deleted_items = file_data.get('trash', []).copy()
+            self.current_file = filename
+
+            # Обновляем интерфейс
+            self.refresh_interface()
+
+            # Активируем вкладку файла
+            for i, tab in enumerate(self.files_notebook.tabs()):
+                if self.files_notebook.tab(tab, "text") == os.path.basename(filename):
+                    self.files_notebook.select(tab)
+                    break
+
+    def refresh_interface(self):
+        """Обновляет весь интерфейс для текущего файла"""
+        # Очищаем текущие вкладки списков
+        for tab in self.notebook.tabs():
+            self.notebook.forget(tab)
+
+        # Полностью сбрасываем виджеты
+        self.list_widgets = {}
+        self.list_frames = {}
+
+        # Создаем виджеты для всех списков текущего файла
+        for list_name in self.lists:
+            self.create_list_widget(list_name)
+
+        # Обновляем отображение всех списков
+        for list_name in self.lists:
+            self.refresh_list(list_name)
+
+    def show_files_context_menu(self, event):
+        """Показывает контекстное меню для вкладок файлов"""
+        # Определяем на какую вкладку файла кликнули
+        tab_index = self.files_notebook.index(f"@{event.x},{event.y}")
+        if tab_index != -1:
+            # Получаем имя файла по индексу вкладки
+            files_list = list(self.open_files.keys())
+            if tab_index < len(files_list):
+                filename = files_list[tab_index]
+                self.current_file_tab_index = tab_index
+                self.current_file_tab_name = filename
+
+                # Создаем контекстное меню
+                files_menu = tk.Menu(self.root, tearoff=0)
+                files_menu.add_command(label="Закрыть файл", command=self.close_current_file)
+                files_menu.add_command(label="Закрыть все файлы", command=self.close_all_files)
+                files_menu.post(event.x_root, event.y_root)
+
+    def close_current_file(self):
+        """Закрывает текущий выбранный файл"""
+        if hasattr(self, 'current_file_tab_name'):
+            filename = self.current_file_tab_name
+
+            # Если закрываем текущий файл, переключаемся на другой или создаем новый
+            if filename == self.current_file:
+                # Ищем другой открытый файл
+                other_files = [f for f in self.open_files.keys() if f != filename]
+                if other_files:
+                    self.switch_to_file(other_files[0])
+                else:
+                    # Создаем новый пустой файл
+                    self.lists = {"1": []}
+                    self.deleted_items = []
+                    self.current_file = None
+                    self.refresh_interface()
+
+            # Удаляем файл из открытых
+            if filename in self.open_files:
+                del self.open_files[filename]
+
+            # Удаляем вкладку
+            if hasattr(self, 'current_file_tab_index'):
+                self.files_notebook.forget(self.current_file_tab_index)
+
+            # Сохраняем изменения
+            self.save_recent_files()
+
+    def close_all_files(self):
+        """Закрывает все файлы"""
+        if self.open_files:
+            if messagebox.askyesno("Закрыть все", "Закрыть все открытые файлы?"):
+                # Очищаем все
+                self.open_files = {}
+                self.lists = {"1": []}
+                self.deleted_items = []
+                self.current_file = None
+
+                # Удаляем все вкладки файлов
+                for tab in self.files_notebook.tabs():
+                    self.files_notebook.forget(tab)
+
+                # Обновляем интерфейс
+                self.refresh_interface()
+                self.save_recent_files()
 
     def create_list_widget(self, list_name):
         """Создает виджет для списка"""
@@ -124,8 +296,10 @@ class ListEditor:
         # Обновляем отображение
         self.refresh_list(list_name)
 
-        # Добавляем контекстное меню для переименования вкладки
+        # Добавляем контекстное меню для переименования вкладок
         self.setup_tab_context_menu()
+
+        self.refresh_list(list_name)
 
     def setup_drag_drop(self, listbox, list_name):
         """Настраивает drag&drop для Listbox"""
@@ -230,8 +404,10 @@ class ListEditor:
 
         # Удаляем старый список
         del self.lists[old_name]
-        del self.list_widgets[old_name]
-        del self.list_frames[old_name]
+        if old_name in self.list_widgets:
+            del self.list_widgets[old_name]
+        if old_name in self.list_frames:
+            del self.list_frames[old_name]
 
         # Удаляем вкладку
         for tab in self.notebook.tabs():
@@ -308,8 +484,10 @@ class ListEditor:
 
             # Удаляем список
             del self.lists[list_name]
-            del self.list_widgets[list_name]
-            del self.list_frames[list_name]
+            if list_name in self.list_widgets:
+                del self.list_widgets[list_name]
+            if list_name in self.list_frames:
+                del self.list_frames[list_name]
 
             # Удаляем вкладку
             for tab in self.notebook.tabs():
@@ -567,24 +745,15 @@ class ListEditor:
         if filename:
             try:
                 with open(filename, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                    file_data = json.load(f)
 
-                self.lists = data.get('lists', {"1": []})
-                self.deleted_items = data.get('trash', [])
-                self.current_file = filename
-
-                # Очищаем текущие вкладки
-                for tab in self.notebook.tabs():
-                    self.notebook.forget(tab)
-
-                self.list_widgets = {}
-                self.list_frames = {}
-
-                # Создаем виджеты для всех списков
-                for list_name in self.lists:
-                    self.create_list_widget(list_name)
+                # Добавляем файл в открытые
+                self.open_files[filename] = file_data
+                self.add_file_tab(filename)
+                self.switch_to_file(filename)
 
                 messagebox.showinfo("Успех", f"Файл {os.path.basename(filename)} загружен")
+                self.save_recent_files()
 
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось загрузить файл: {str(e)}")
@@ -600,6 +769,14 @@ class ListEditor:
         if filename:
             self.current_file = filename
             self._save_to_file(filename)
+
+            # Добавляем в открытые файлы
+            self.open_files[filename] = {
+                'lists': self.lists.copy(),
+                'trash': self.deleted_items.copy()
+            }
+            self.add_file_tab(filename)
+            self.save_recent_files()
 
     def _save_to_file(self, filename):
         """Внутренняя функция сохранения"""
@@ -627,8 +804,32 @@ class ListEditor:
                 }
                 with open(self.current_file, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
+
+                # Обновляем данные в открытых файлах
+                if self.current_file in self.open_files:
+                    self.open_files[self.current_file] = data
+                    self.save_recent_files()
+
             except Exception as e:
                 print(f"Ошибка автосохранения: {e}")
+
+    def auto_save_current_file(self):
+        """Автосохранение только текущего файла"""
+        if self.current_file:
+            try:
+                data = {
+                    'lists': self.lists,
+                    'trash': self.deleted_items
+                }
+                with open(self.current_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+
+                # Обновляем данные в открытых файлах
+                if self.current_file in self.open_files:
+                    self.open_files[self.current_file] = data
+
+            except Exception as e:
+                print(f"Ошибка автосохранения текущего файла: {e}")
 
 
 if __name__ == "__main__":
